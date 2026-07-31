@@ -1,12 +1,12 @@
 # Sample-Aware Test-Time Adaptation for Medical Image-to-Image Translation
 
 <p align="center">
-[Irene Iele](https://scholar.google.com/citations?user=srLH7lkAAAAJ&hl=it&oi=ao)<sup>1</sup>, 
-[Francesco Di Feola](https://scholar.google.com/citations?user=nzm0qagAAAAJ&hl=it)<sup>2</sup>, 
-[Matteo Tortora](https://matteotortora.github.io)<sup>3</sup> 
-[Rosa Sicilia](https://scholar.google.com/citations?user=d3yjHMMAAAAJ&hl=it&oi=ao)<sup>4</sup>,
-[Valerio Guarrasi](https://scholar.google.com/citations?user=840UXEMAAAAJ&hl=it&oi=ao)<sup>4</sup>,
-[Paolo Soda](https://scholar.google.com/citations?user=E7rcYCQAAAAJ&hl=it&oi=ao)<sup>1,2</sup>
+  <a href="https://scholar.google.com/citations?user=srLH7lkAAAAJ&hl=it&oi=ao">Irene Iele</a><sup>1</sup>,
+  <a href="https://scholar.google.com/citations?user=nzm0qagAAAAJ&hl=it">Francesco Di Feola</a><sup>2</sup>,
+  <a href="https://matteotortora.github.io">Matteo Tortora</a><sup>3</sup>,
+  <a href="https://scholar.google.com/citations?user=d3yjHMMAAAAJ&hl=it&oi=ao">Rosa Sicilia</a><sup>4</sup>,
+  <a href="https://scholar.google.com/citations?user=840UXEMAAAAJ&hl=it&oi=ao">Valerio Guarrasi</a><sup>4</sup>,
+  <a href="https://scholar.google.com/citations?user=E7rcYCQAAAAJ&hl=it&oi=ao">Paolo Soda</a><sup>1,2</sup>
 </p>
 
 <p align="center">
@@ -20,19 +20,20 @@
 
 ## Overview
 
-This repository releases the code for sample-aware Test-Time Adaptation in Medical Image-to-Image Translation.
+This repository releases the code for sample-aware Test-Time Adaptation in medical image-to-image translation.
 The core code is generic and can be reused with different task models and datasets.
-An example is provided in the repository to show one concrete setup.
+An LDCT Mayo Clinic example is provided to show one concrete setup.
 
 <p align="center">
   <img src="./method_v7.jpg" alt="Sample-aware TTA method overview" width="100%" />
 </p>
 
 <p align="center">
-  <video controls preload="metadata" width="100%" poster="./method_v7.jpg">
-    <source src="./video_TTA_pptx.mov" type="video/quicktime">
-    Your browser does not support embedded video. <a href="./video_TTA_pptx.mov">Open the demo video (.mov)</a>.
-  </video>
+  <img src="./video_TTA_pptx.gif" alt="Sample-aware TTA demo preview" width="100%" />
+</p>
+
+<p align="center">
+  <a href="./video_TTA_pptx.mov">Watch the full demo video (.mov)</a>
 </p>
 
 ---
@@ -64,7 +65,7 @@ examples/
 - `TTA.py` is the repo-root convenience entrypoint.
 - `model/` contains the generic sample-aware TTA pipeline and the reconstruction-model training code.
 - `scripts/` contains a generic launcher that expects paths through environment variables or explicit flags.
-- `examples/ldct_mayo/` shows one concrete LDCT Mayo Clinic setup with the task-model and AE checkpoint paths filled in.
+- `examples/ldct_mayo/` documents one concrete LDCT Mayo Clinic setup.
 - `weights/` stores the LDCT Mayo example checkpoints under `ckp/ldct_mayo/` and can also host user-provided checkpoints.
 - `dataset/` is a placeholder for user-provided datasets.
 
@@ -85,8 +86,8 @@ m2=target
 sample_start=0
 sample_end=10000
 strategy=rndm_50
-thr=threshold
-ae_epoch=100
+thr=0.0
+ae_epoch=49
 task_ckpt=/path/to/task_checkpoint.pth
 ae_ckpt_dir=/path/to/ae_checkpoints
 
@@ -125,6 +126,7 @@ For custom datasets, replace `--dataset_mode`, `--modalities`, and the checkpoin
 The example below uses the Mayo Clinic low-dose CT setup.
 The dataset root is intentionally left generic so you can point it to your local copy.
 The task-model and AE checkpoints for the example are stored under `weights/ckp/ldct_mayo/`.
+The exact files are listed in [examples/ldct_mayo/CHECKPOINTS.md](examples/ldct_mayo/CHECKPOINTS.md).
 
 *Customize the values below if you want to adapt the example to another environment.*
 
@@ -136,10 +138,10 @@ m2=HDCT
 sample_start=0
 sample_end=10000
 strategy=rndm_50
-thr=0.0064
-ae_epoch=100
+thr=0.0
+ae_epoch=49
 task_ckpt=./weights/ckp/ldct_mayo/task_model/100_net_G_A.pth
-ae_ckpt_dir=./weights/ckp/ldct_mayo/ae/epoch100
+ae_ckpt_dir=./weights/ckp/ldct_mayo/ae/epoch49
 
 python TTA.py \
   --norm instance \
@@ -172,3 +174,9 @@ python TTA.py \
 The corresponding walkthrough is summarized in [examples/ldct_mayo/README.md](examples/ldct_mayo/README.md).
 
 ---
+
+## Notes
+
+- The demo image is stored as [`method_v7.jpg`](method_v7.jpg).
+- The demo preview is stored as [`video_TTA_pptx.gif`](video_TTA_pptx.gif).
+- The full demo video is stored as [`video_TTA_pptx.mov`](video_TTA_pptx.mov).
