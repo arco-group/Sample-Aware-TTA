@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Repository-specific artifacts
+results/
+outputs/
+weights/*
+!weights/README.md
+dataset/*
+!dataset/README.md
+model/**/web/
+model/**/output/
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.log
+*.out
+*.err
