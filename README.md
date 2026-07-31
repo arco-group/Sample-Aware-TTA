@@ -1,7 +1,12 @@
 # Sample-Aware Test-Time Adaptation for Medical Image-to-Image Translation
 
 <p align="center">
-  <strong>Irene Iele<sup>1</sup>, Francesco Di Feola<sup>2</sup>, Matteo Tortora<sup>3</sup>, Rosa Sicilia<sup>4</sup>, Valerio Guarrasi<sup>4</sup>, Paolo Soda<sup>1,2</sup></strong>
+[Irene Iele](https://scholar.google.com/citations?user=srLH7lkAAAAJ&hl=it&oi=ao)<sup>1</sup>, 
+[Francesco Di Feola](https://scholar.google.com/citations?user=nzm0qagAAAAJ&hl=it)<sup>2</sup>, 
+[Matteo Tortora](https://matteotortora.github.io)<sup>3</sup> 
+[Rosa Sicilia](https://scholar.google.com/citations?user=d3yjHMMAAAAJ&hl=it&oi=ao)<sup>4</sup>,
+[Valerio Guarrasi](https://scholar.google.com/citations?user=840UXEMAAAAJ&hl=it&oi=ao)<sup>4</sup>,
+[Paolo Soda](https://scholar.google.com/citations?user=E7rcYCQAAAAJ&hl=it&oi=ao)<sup>1,2</sup>
 </p>
 
 <p align="center">
@@ -17,16 +22,17 @@
 
 This repository releases the code for sample-aware Test-Time Adaptation in Medical Image-to-Image Translation.
 The core code is generic and can be reused with different task models and datasets.
-An LDCT Mayo Clinic example is provided in the repository to show one concrete setup.
+An example is provided in the repository to show one concrete setup.
 
 <p align="center">
-  <a href="./video_TTA_pptx.mov">
-    <img src="./method_v7.jpg" alt="Sample-aware TTA method overview" width="100%" />
-  </a>
+  <img src="./method_v7.jpg" alt="Sample-aware TTA method overview" width="100%" />
 </p>
 
 <p align="center">
-  <a href="./video_TTA_pptx.mov">Watch the demo video (.mov)</a>
+  <video controls preload="metadata" width="100%" poster="./method_v7.jpg">
+    <source src="./video_TTA_pptx.mov" type="video/quicktime">
+    Your browser does not support embedded video. <a href="./video_TTA_pptx.mov">Open the demo video (.mov)</a>.
+  </video>
 </p>
 
 ---
