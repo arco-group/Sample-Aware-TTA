@@ -32,10 +32,6 @@ An LDCT Mayo Clinic example is provided to show one concrete setup.
   <img src="./video_TTA_pptx.gif" alt="Sample-aware TTA demo preview" width="100%" />
 </p>
 
-<p align="center">
-  <a href="./video_TTA_pptx.mov">Watch the full demo video (.mov)</a>
-</p>
-
 ---
 
 ## Repository Layout
@@ -179,4 +175,3 @@ The corresponding walkthrough is summarized in [examples/ldct_mayo/README.md](ex
 
 - The demo image is stored as [`method_v7.jpg`](method_v7.jpg).
 - The demo preview is stored as [`video_TTA_pptx.gif`](video_TTA_pptx.gif).
-- The full demo video is stored as [`video_TTA_pptx.mov`](video_TTA_pptx.mov).
