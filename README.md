@@ -82,8 +82,8 @@ m2=target
 sample_start=0
 sample_end=10000
 strategy=rndm_50
-thr=0.0
-ae_epoch=49
+thr=threshold
+ae_epoch=100
 task_ckpt=/path/to/task_checkpoint.pth
 ae_ckpt_dir=/path/to/ae_checkpoints
 
@@ -134,10 +134,10 @@ m2=HDCT
 sample_start=0
 sample_end=10000
 strategy=rndm_50
-thr=0.0
-ae_epoch=49
-task_ckpt=./weights/ckp/ldct_mayo/task_model/100_net_G_A.pth
-ae_ckpt_dir=./weights/ckp/ldct_mayo/ae/epoch49
+thr=0.064
+ae_epoch=100
+task_ckpt=./examples/ckp/task_model/100_net_G_A.pth
+ae_ckpt_dir=./examples/ckp/ae/epoch100
 
 python TTA.py \
   --norm instance \
@@ -167,7 +167,7 @@ python TTA.py \
   --tta_threshold "$thr"
 ```
 
-The corresponding walkthrough is summarized in [examples/ldct_mayo/README.md](examples/ldct_mayo/README.md).
+The corresponding walkthrough is summarized in [examples/README.md](examples/README.md).
 
 ---
 
