@@ -38,7 +38,7 @@ class BaseOptions():
         parser.add_argument('--init_gain', type=float, default=0.02, help='scaling factor for normal, xavier and orthogonal.')
         parser.add_argument('--no_dropout', action='store_true', help='no dropout for the generator')
         # Dataset parameters
-        parser.add_argument('--dataset_mode', type=str, default='unaligned', help='chooses how datasets are loaded. [unaligned | aligned | single | colorization]')
+        parser.add_argument('--dataset_mode', type=str, default='paired_slice', help='dataset loader name; the released example uses paired_slice')
         parser.add_argument(
             '--modalities',
             default=["source", "target"],
@@ -111,11 +111,10 @@ class BaseOptions():
         parser.add_argument('--ae_checkpoint_dir', type=str, default='', help='directory that contains the AE checkpoints for the selected reconstruction model')
         parser.add_argument('--ae_epoch', type=str, default='49', help='epoch suffix used when loading AE checkpoints from ae_checkpoint_dir')
         parser.add_argument('--tta_strategy', type=str, default='rndm_50', help='TTA strategy to use at inference time')
-        parser.add_argument('--tta_threshold', type=float, default=0.0, help='reconstruction-loss threshold that triggers TTA')
+        parser.add_argument('--tta_threshold', type=float, default=0.0064, help='reconstruction-loss threshold that triggers TTA')
 
         parser.add_argument('--task', default='denoising', type=str, help= 'confidence threshold (80,85,90,95,98)')
         parser.add_argument('--confidence', default=95, type=int, help= 'confidence threshold (80,85,90,95,98)')
-        parser.add_argument('--criteria', default='loss_output', type=str, help= 'criteria')
         parser.add_argument('--under_sample_dataset', action="store_true", help='True undersample the dataset deleting one slice every three')
         parser.add_argument('--phase', type=str, default=None, help='train or test, if None dont split')
         parser.add_argument('--data_phase', type=str, default=None, help='train or test for dataset selection')
@@ -199,6 +198,8 @@ class BaseOptions():
             if id >= 0:
                 opt.gpu_ids.append(id)
         if len(opt.gpu_ids) > 0:
+            if not torch.cuda.is_available():
+                raise RuntimeError('GPU requested but CUDA is unavailable; use --gpu_ids -1 for CPU.')
             torch.cuda.set_device(opt.gpu_ids[0])
 
         self.opt = opt

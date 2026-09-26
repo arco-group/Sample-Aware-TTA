@@ -1,21 +1,23 @@
-from models.adaptor_3 import ANet
 import torch
-from models.Autoencoder_model import AENet
+
+# Inference-time adaptation and configuration selection use only AE feature
+# reconstruction errors, which do not require target references. SSIM, MAE,
+# and PSNR compare against the paired target and are computed only once, after
+# the configuration has been selected, for reference-based final evaluation.
 import pandas as pd
-import os
 from util.visualizer import calcola_mse, calculate_psnr, calculate_ssim
 from collections import OrderedDict
 import numpy as np
 from itertools import combinations
 import random
 import warnings
-import shutil
 
 warnings.filterwarnings("ignore")
 
 torch.manual_seed(0)
-torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
 np.random.seed(0)
+random.seed(0)
 
 def compute_tnet_dim(opt):
     layers_to_dim = {'input': 1, 'first_conv': 64, 'second_conv': 128, 'third_conv': 256, 'resnet_block_1': 256,
@@ -27,14 +29,15 @@ def compute_tnet_dim(opt):
 
 
 def l2_reg_ortho(model, lambda_l2=1e-4):
-    l2_loss = torch.tensor(0.0, device='cuda')
+    device = next(model.parameters()).device
+    l2_loss = torch.tensor(0.0, device=device)
     for param in model.parameters():
         if param.requires_grad:
             l2_loss += torch.norm(param, p=2) ** 2
     return lambda_l2 * l2_loss
 
 
-def TTA_rndm_50(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, psnr_score_no_tta=0.0):
+def TTA_rndm_50(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
     tutte_combinazioni = set()
@@ -44,7 +47,7 @@ def TTA_rndm_50(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=Fal
         tutte_combinazioni.add(tuple(sorted(random.sample(indexs, r))))
     tutte_combinazioni = list(tutte_combinazioni)
 
-    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss)
+    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
     for comb in tutte_combinazioni:
         row, candidate_loss = _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, comb, orthw)
@@ -67,38 +70,13 @@ def _tta_append_loss_row(loss_config_output, row):
     return pd.concat([loss_config_output, pd.DataFrame([row])], ignore_index=True)
 
 
-def _tta_remove_path(path):
-    if os.path.isdir(path):
-        shutil.rmtree(path)
-    elif os.path.isfile(path):
-        os.remove(path)
+def _tta_clone_adaptor_state(adaptors):
+    """Snapshot adaptor weights in CPU RAM without changing optimizer state."""
+    return {name: value.detach().cpu().clone() for name, value in adaptors.state_dict().items()}
 
 
-def _tta_cleanup_adaptor_weights(adaptors, opt, loss_config_output):
-    epoch_names = {str(epoch) for epoch in range(opt.tepochs)}
-    config_names = set()
-    if not loss_config_output.empty and 'config' in loss_config_output:
-        config_names = {str(config) for config in loss_config_output['config'].dropna().unique()}
-
-    cleanup_targets = [
-        (getattr(adaptors, 'save_dir', None), epoch_names),
-        (getattr(adaptors, 'save_dir_config', None), config_names),
-    ]
-
-    for root, names in cleanup_targets:
-        if not root:
-            continue
-        root_abs = os.path.abspath(root)
-        for name in names:
-            path = os.path.abspath(os.path.join(root_abs, str(name)))
-            try:
-                if os.path.commonpath([root_abs, path]) != root_abs:
-                    continue
-                _tta_remove_path(path)
-            except FileNotFoundError:
-                continue
-            except OSError as exc:
-                print(f"Warning: could not remove adaptor checkpoint path {path}: {exc}")
+def _tta_load_adaptor_state(adaptors, state):
+    adaptors.load_state_dict(state)
 
 
 def _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, comb_to_print, orthw):
@@ -106,24 +84,15 @@ def _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, c
     opt.return_layers = _tta_comb_to_return_layers(comb_to_print, return_layers)
     compute_tnet_dim(opt)
 
-    if not opt.ae_checkpoint_dir:
-        raise ValueError("opt.ae_checkpoint_dir must be set to load AE checkpoints")
-    ae_epoch = str(opt.ae_epoch)
-    AE = AENet(opt)
-    for i in range(len(opt.return_layers)):
-        name = opt.return_layers[i]
-        elem = opt.tnet_dim[i]
-        load_path_weights = os.path.join(opt.ae_checkpoint_dir, f'AE_{name}_{ae_epoch}.pt')
-
-        state_dict = torch.load(load_path_weights, map_location=str(AE.device))
-
-        AE.AENet[i].load_state_dict(state_dict)
-        AE.set_requires_grad(AE.AENet[i], False)
+    AE = adaptors._tta_ae_model
+    active_ae_indices = [return_layers.index(name) for name in opt.return_layers]
     adaptors.reset(default=True)
 
     prev_loss = float('inf')
     loss_tot = []
     loss_output = []
+    best_epoch_loss = float('inf')
+    best_epoch_state = None
 
     for epoch in range(opt.tepochs):
         outputs = adaptors(batch, task_model, opt.model)
@@ -131,17 +100,17 @@ def _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, c
         loss = 0
         print('---------------------------------')
 
-        for i in range(len(AE.AENet)):
+        for i, ae_index in enumerate(active_ae_indices):
             index = opt.return_layers[i]
             side_out = outputs[index]
             level_loss = 0
 
-            if len(AE.AENetMatch[i]) == 2:
+            if len(AE.AENetMatch[ae_index]) == 2:
                 side_out_cat = torch.cat([side_out[0], side_out[1]], dim=1)
             else:
                 side_out_cat = side_out
 
-            ae_out = AE.AENet[i](side_out_cat, side_out=False)
+            ae_out = AE.AENet[ae_index](side_out_cat, side_out=False)
 
             scale = side_out_cat.pow(2).mean().sqrt().detach()
             level_loss = AE.AELoss(ae_out, side_out_cat) / (scale + 1e-6)
@@ -149,7 +118,7 @@ def _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, c
             print(f'loss {i} epoch {epoch}: {level_loss}')
             loss += level_loss
 
-        loss_output.append(level_loss.data.item())
+        loss_output.append(loss.detach().item())
         org_loss = orthw * l2_reg_ortho(adaptors.conv)
         loss += org_loss
         loss_tot.append(loss.data.item())
@@ -158,7 +127,10 @@ def _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, c
         loss.backward()
         torch.nn.utils.clip_grad_norm_(adaptors.parameters(), max_norm=10.0)
         adaptors.optimizer_ANet.step()
-        adaptors.save_networks(str(epoch))
+
+        if loss_output[-1] < best_epoch_loss:
+            best_epoch_loss = loss_output[-1]
+            best_epoch_state = _tta_clone_adaptor_state(adaptors)
 
         if prev_loss < loss:
             break
@@ -167,24 +139,14 @@ def _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, c
 
     min_index = loss_output.index(min(loss_output))
     used_comb = _tta_comb_to_string(comb_to_print)
-    adaptors.load_networks(str(min_index))
-    adaptors.save_networks(used_comb, config=True)
+    _tta_load_adaptor_state(adaptors, best_epoch_state)
+    adaptors._tta_config_states[used_comb] = best_epoch_state
+    del outputs, loss, org_loss, ae_out, side_out_cat
 
-    with torch.no_grad():
-        outputs = adaptors(batch, task_model, opt.model)
-    real_B = task_model.real_B
-    fake_B = outputs[opt.return_layers[-1]]
-
-    visuals_output = OrderedDict()
-    visuals_output['real_B'] = real_B
-    visuals_output['fake_B'] = fake_B
-
-    psnr_score = calculate_psnr(visuals_output)
     row = {
         'config': used_comb,
         'loss_output': loss_output[min_index],
         'loss_tot': loss_tot[min_index] / len(comb_to_print),
-        'PSNR': psnr_score,
     }
 
     return row, min(loss_output)
@@ -192,10 +154,10 @@ def _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, c
 
 def _tta_finalize_result(adaptors, opt, task_model, batch, return_layers, loss_config_output):
     n = len(return_layers[1:-1])
-    min_loss = loss_config_output[opt.criteria].min()
-    used_comb = loss_config_output[loss_config_output[opt.criteria] == min_loss]['config'].values[0]
+    min_loss = loss_config_output['loss_output'].min()
+    used_comb = loss_config_output.nsmallest(1, 'loss_output')['config'].iloc[0]
 
-    adaptors.load_networks(used_comb, config=True)
+    _tta_load_adaptor_state(adaptors, adaptors._tta_config_states[used_comb])
     chosen_comb = used_comb.split('_')
     chosen_comb = [int(x) - 1 for x in chosen_comb]
     chosen_comb = sorted(chosen_comb)
@@ -204,12 +166,11 @@ def _tta_finalize_result(adaptors, opt, task_model, batch, return_layers, loss_c
     opt.return_layers = chosen_comb
     compute_tnet_dim(opt)
 
+    # Reference-based evaluation only: omega* has already been selected above.
     with torch.no_grad():
         outputs = adaptors(batch, task_model, opt.model)
     real_B = task_model.real_B
     fake_B = outputs[opt.return_layers[-1]]
-    img_path = task_model.get_image_paths()
-
     visuals_output = OrderedDict()
     visuals_output['real_B'] = real_B
     visuals_output['fake_B'] = fake_B
@@ -219,21 +180,32 @@ def _tta_finalize_result(adaptors, opt, task_model, batch, return_layers, loss_c
     psnr_score = calculate_psnr(visuals_output)
 
     selected_loss_output = float(loss_config_output[loss_config_output['config'] == used_comb]['loss_output'].values[0])
-    _tta_cleanup_adaptor_weights(adaptors, opt, loss_config_output)
+    del outputs, fake_B, visuals_output
+    adaptors._tta_config_states.clear()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return used_comb, ssim_score, mae_score, psnr_score, min_loss, selected_loss_output
 
 
-def _tta_prepare_strategy(adaptors, opt, rec_loss):
+def _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model):
+    if ae_model is None:
+        raise ValueError("A preloaded ae_model is required for TTA")
+    # Avoid registering the AE as an adaptor child: adaptor snapshots must
+    # contain exactly the weights previously written by save_networks().
+    object.__setattr__(adaptors, '_tta_ae_model', ae_model)
+    adaptors._tta_config_states = {}
+    for subnet in ae_model.AENet:
+        subnet.train()  # Match the former per-candidate AENet construction.
     adaptors.set_requires_grad([adaptors.adpNet, adaptors.conv], True)
     adaptors.train()
     orthw = opt.__dict__.get('orthw', 1)
     rec_loss = round(rec_loss.item(), 4)
-    loss_config_output = pd.DataFrame(columns=['config', 'loss_output', 'loss_tot', 'PSNR'])
+    loss_config_output = pd.DataFrame(columns=['config', 'loss_output', 'loss_tot'])
     return orthw, rec_loss, loss_config_output
 
 
-def TTA_rndm_10(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, psnr_score_no_tta=0.0):
+def TTA_rndm_10(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
     tutte_combinazioni = set()
@@ -243,7 +215,7 @@ def TTA_rndm_10(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=Fal
         tutte_combinazioni.add(tuple(sorted(random.sample(indexs, r))))
     tutte_combinazioni = list(tutte_combinazioni)
 
-    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss)
+    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
     for comb in tutte_combinazioni:
         row, candidate_loss = _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, comb, orthw)
@@ -252,14 +224,14 @@ def TTA_rndm_10(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=Fal
     return _tta_finalize_result(adaptors, opt, task_model, batch, return_layers, loss_config_output)
 
 
-def TTA_grid(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, psnr_score_no_tta=0.0):
+def TTA_grid(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
     tutte_combinazioni = []
     for r in range(1, len(indexs) + 1):
         tutte_combinazioni.extend(combinations(indexs, r))
 
-    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss)
+    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
     for comb in tutte_combinazioni:
         row, candidate_loss = _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, comb, orthw)
@@ -268,7 +240,7 @@ def TTA_grid(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False,
     return _tta_finalize_result(adaptors, opt, task_model, batch, return_layers, loss_config_output)
 
 
-def TTA_forward(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, psnr_score_no_tta=0.0):
+def TTA_forward(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
     selected = []
@@ -277,7 +249,7 @@ def TTA_forward(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=Fal
     best_comb = None
     improved = True
 
-    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss)
+    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
     while improved and remaining:
         improved = False
@@ -300,14 +272,14 @@ def TTA_forward(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=Fal
     return _tta_finalize_result(adaptors, opt, task_model, batch, return_layers, loss_config_output)
 
 
-def TTA_backward(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, psnr_score_no_tta=0.0):
+def TTA_backward(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
     selected = list(indexs)
     best_loss = float('inf')
     best_comb = None
 
-    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss)
+    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
     row, candidate_loss = _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, selected, orthw)
     loss_config_output = _tta_append_loss_row(loss_config_output, row)
@@ -336,14 +308,14 @@ def TTA_backward(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=Fa
     return _tta_finalize_result(adaptors, opt, task_model, batch, return_layers, loss_config_output)
 
 
-def TTA_bayesian(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, psnr_score_no_tta=0.0):
+def TTA_bayesian(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     import optuna
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
-    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss)
+    orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
     def objective(trial):
         nonlocal loss_config_output

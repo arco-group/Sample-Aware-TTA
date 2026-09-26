@@ -9,7 +9,7 @@ class CycleGANModel(BaseModel):
     """
     This class implements the CycleGAN model, for learning image-to-image translation without paired data.
 
-    The model training requires '--dataset_mode unaligned' dataset.
+    The released inference example uses '--dataset_mode paired_slice'.
     By default, it uses a '--netG resnet_9blocks' ResNet generator,
     a '--netD basic' discriminator (PatchGAN introduced by pix2pix),
     and a least-square GANs objective ('--gan_mode lsgan').

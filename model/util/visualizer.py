@@ -50,8 +50,8 @@ def calculate_psnr(visuals):
         mse = torch.mean((image_fake_B - image_real_B) ** 2)
         if mse == 0:
             return float('inf')
-        dynamic_range = torch.max(image_fake_B) - torch.min(image_real_B)
-        psnr = 10 * torch.log10((dynamic_range ** 2) / mse)
+        dynamic_range = 2.0  # images are normalized to [-1, 1]
+        psnr = 10 * torch.log10(torch.tensor(dynamic_range ** 2, device=mse.device) / mse)
         psnr = psnr.item()
         return psnr
 

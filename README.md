@@ -45,32 +45,28 @@ model/
   data/
   options/
   util/
-weights/
-  ckp/
-    ldct_mayo/
-      task_model/
-      ae/
 dataset/
 scripts/
   run_tta.sh
 examples/
-  ldct_mayo/
-    README.md
+  README.md
+  CHECKPOINTS.md
 ```
 
 - `TTA.py` is the repo-root convenience entrypoint.
-- `model/` contains the generic sample-aware TTA pipeline and the reconstruction-model training code.
+- `model/` contains the generic sample-aware TTA pipeline and reconstruction-model components.
 - `scripts/` contains a generic launcher that expects paths through environment variables or explicit flags.
-- `examples/ldct_mayo/` documents one concrete LDCT Mayo Clinic setup.
-- `weights/` stores the LDCT Mayo example checkpoints under `ckp/ldct_mayo/` and can also host user-provided checkpoints.
+- `examples/` documents the LDCT Mayo setup.
+- Checkpoint binaries are not distributed; the canonical example layout is documented in
+  [`examples/CHECKPOINTS.md`](examples/CHECKPOINTS.md).
 - `dataset/` is a placeholder for user-provided datasets.
 
 ---
 
 ## Core Usage
 
-The core pipeline does not assume a fixed dataset root or a fixed task model.
-Pass the dataset, task checkpoint, and AE checkpoint paths explicitly.
+Targets are evaluation-only; adaptation and selection use reference-free losses.
+Pass dataset and checkpoint paths explicitly.
 
 *Customize the values below before running the command.*
 
@@ -82,8 +78,8 @@ m2=target
 sample_start=0
 sample_end=10000
 strategy=rndm_50
-thr=threshold
-ae_epoch=100
+thr=0.0064
+ae_epoch=49
 task_ckpt=/path/to/task_checkpoint.pth
 ae_ckpt_dir=/path/to/ae_checkpoints
 
@@ -121,8 +117,8 @@ For custom datasets, replace `--dataset_mode`, `--modalities`, and the checkpoin
 
 The example below uses the Mayo Clinic low-dose CT setup.
 The dataset root is intentionally left generic so you can point it to your local copy.
-The task-model and AE checkpoints for the example are stored under `weights/ckp/ldct_mayo/`.
-The exact files are listed in [examples/ldct_mayo/CHECKPOINTS.md](examples/ldct_mayo/CHECKPOINTS.md).
+Checkpoint files are not distributed. Download or copy them into the canonical
+[`examples/ckp/` layout](examples/CHECKPOINTS.md), or replace the two paths below with their external locations.
 
 *Customize the values below if you want to adapt the example to another environment.*
 
@@ -135,9 +131,9 @@ sample_start=0
 sample_end=10000
 strategy=rndm_50
 thr=0.0064
-ae_epoch=100
+ae_epoch=49
 task_ckpt=./examples/ckp/task_model/100_net_G_A.pth
-ae_ckpt_dir=./examples/ckp/ae/epoch100
+ae_ckpt_dir=./examples/ckp/ae/epoch49
 
 python TTA.py \
   --norm instance \
@@ -167,9 +163,17 @@ python TTA.py \
   --tta_threshold "$thr"
 ```
 
-The corresponding walkthrough is summarized in [examples/README.md](examples/README.md).
+Final metrics use the paired target only after selection. See [examples/README.md](examples/README.md).
 
 ---
+
+## Dependencies
+
+The release is tested with Python 3.9.25. Install its runtime dependencies with
+`pip install -r requirements.txt`. Optuna is used only by the explicit `bayesian` strategy,
+but is included so every released strategy is available after one installation.
+
+Set `GPU_IDS=-1` in the launcher for CPU mode; the default is GPU `0`.
 
 ## Notes
 

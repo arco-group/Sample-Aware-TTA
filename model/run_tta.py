@@ -5,13 +5,15 @@ from data import create_dataset
 from models import create_model
 import pandas as pd
 import os
+import random
 from util.visualizer import calcola_mse, calculate_psnr, calculate_ssim
 from collections import OrderedDict
 import numpy as np
 from models.adaptor_3 import ANet
 torch.manual_seed(0)
-torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
 np.random.seed(0)
+random.seed(0)
 from tqdm import tqdm
 
 from tta_strategies import (
@@ -34,6 +36,12 @@ TTA_STRATEGIES = {
 }
 
 
+def _write_csv_atomic(dataframe, path):
+    temporary_path = f'{path}.tmp'
+    dataframe.to_csv(temporary_path, index=False)
+    os.replace(temporary_path, path)
+
+
 def run_inference(task_model, AENet, adaptors, dataset, opt, save_dir, thr=0, tta_fn=TTA_rndm_50, strategy_name='rndm_50'):
     print(save_dir)
     print(f'TTA strategy: {strategy_name}')
@@ -50,16 +58,12 @@ def run_inference(task_model, AENet, adaptors, dataset, opt, save_dir, thr=0, tt
     for subnets in AENet.AENet:
         subnets.eval()
 
-    mae, psnr, ssim_list = [], [], []
-    df = pd.DataFrame(columns=['img_name', 'SSIM', 'MAE', 'PSNR'])
-    df_tta = pd.DataFrame(columns=['img_name', 'SSIM', 'MAE', 'PSNR', 'config'])
-
     # Prepare output paths
     os.makedirs(save_dir, exist_ok=True)
     csv_path_no_tta = os.path.join(save_dir, 'metrics_no_tta.csv')
     csv_path_tta = os.path.join(save_dir, 'metrics_tta.csv')
 
-    no_tta_columns = ['img_name', 'SSIM', 'MAE', 'PSNR']
+    no_tta_columns = ['img_name', 'SSIM', 'MAE', 'PSNR', 'tta_triggered']
     tta_columns = ['img_name', 'SSIM', 'MAE', 'PSNR', 'config']
 
     try:
@@ -72,11 +76,15 @@ def run_inference(task_model, AENet, adaptors, dataset, opt, save_dir, thr=0, tt
     except pd.errors.EmptyDataError:
         df_existing_tta = pd.DataFrame(columns=tta_columns)
 
-    processed_img_names = set(df_existing_no_tta['img_name'].astype(str)) if 'img_name' in df_existing_no_tta else set()
-
-    # Write headers only the first time
-    write_header_no_tta = not os.path.exists(csv_path_no_tta)
-    write_header_tta = not os.path.exists(csv_path_tta)
+    if 'tta_triggered' not in df_existing_no_tta:
+        df_existing_no_tta['tta_triggered'] = pd.NA
+    no_tta_img_names = set(df_existing_no_tta['img_name'].astype(str)) if 'img_name' in df_existing_no_tta else set()
+    tta_img_names = set(df_existing_tta['img_name'].astype(str)) if 'img_name' in df_existing_tta else set()
+    trigger_values = df_existing_no_tta['tta_triggered'].astype(str).str.lower()
+    non_triggered_img_names = set(
+        df_existing_no_tta.loc[trigger_values.isin({'false', '0', '0.0'}), 'img_name'].astype(str)
+    )
+    processed_img_names = tta_img_names | non_triggered_img_names
 
     for idx, data in tqdm(enumerate(dataset)):
         task_model.set_input(data)
@@ -95,11 +103,8 @@ def run_inference(task_model, AENet, adaptors, dataset, opt, save_dir, thr=0, tt
         visuals = task_model.get_current_visuals()
 
         mae_score = calcola_mse(visuals)
-        mae.append(mae_score)
         psnr_score = calculate_psnr(visuals)
-        psnr.append(psnr_score)
         ssim_score = calculate_ssim(visuals)
-        ssim_list.append(ssim_score)
         
         index = opt.return_layers[-1]
         side_out = outputs[index]
@@ -108,22 +113,25 @@ def run_inference(task_model, AENet, adaptors, dataset, opt, save_dir, thr=0, tt
         side_out = side_out
         ae_out = AENet.AENet[-1](side_out, side_out=False)
         rec_loss = AENet.AELoss(ae_out, side_out)
+        tta_triggered = bool(np.round(rec_loss.item(), 4) > thr)
 
         row = {
             'img_name': img_path[0],
             'SSIM': np.round(ssim_score, 4),
             'MAE': np.round(mae_score, 4),
             'PSNR': np.round(psnr_score, 4),
+            'tta_triggered': tta_triggered,
         }
-        pd.DataFrame([row]).to_csv(
-            csv_path_no_tta,
-            mode='a',
-            header=write_header_no_tta,
-            index=False
-        )
-        write_header_no_tta = False
-        processed_img_names.add(img_name)
-        if np.round(rec_loss.item(),4) > thr:
+        if img_name in no_tta_img_names:
+            mask = df_existing_no_tta['img_name'].astype(str) == img_name
+            for column, value in row.items():
+                df_existing_no_tta.loc[mask, column] = value
+        else:
+            df_existing_no_tta = pd.concat([df_existing_no_tta, pd.DataFrame([row])], ignore_index=True)
+            no_tta_img_names.add(img_name)
+        _write_csv_atomic(df_existing_no_tta[no_tta_columns], csv_path_no_tta)
+
+        if tta_triggered:
             used_comb, ssim_score, mae_score, psnr_score, min_loss, _ = tta_fn(
                 adaptors,
                 opt,
@@ -132,7 +140,7 @@ def run_inference(task_model, AENet, adaptors, dataset, opt, save_dir, thr=0, tt
                 data,
                 rec_loss,
                 return_layers=opt.return_layers,
-                psnr_score_no_tta=psnr_score,
+                ae_model=AENet,
             )
 
             
@@ -143,13 +151,10 @@ def run_inference(task_model, AENet, adaptors, dataset, opt, save_dir, thr=0, tt
                 'PSNR': np.round(psnr_score, 4),
                 'config': used_comb
             }
-            pd.DataFrame([row_tta]).to_csv(
-                csv_path_tta,
-                mode='a',
-                header=write_header_tta,
-                index=False
-            )
-            write_header_tta = False
+            df_existing_tta = pd.concat([df_existing_tta, pd.DataFrame([row_tta])], ignore_index=True)
+            df_existing_tta = df_existing_tta.drop_duplicates(subset='img_name', keep='last')
+            _write_csv_atomic(df_existing_tta[tta_columns], csv_path_tta)
+            tta_img_names.add(img_name)
 
         opt.return_layers = return_layers
 
@@ -208,7 +213,7 @@ if __name__ == '__main__':
     if not task_checkpoint_path:
         raise ValueError("Task model checkpoint path is required. Set --task_checkpoint_path or TASK_CHECKPOINT_PATH.")
 
-    state_dict_model = torch.load(task_checkpoint_path, map_location=str(task_model.device))
+    state_dict_model = torch.load(task_checkpoint_path, map_location=str(task_model.device), weights_only=True)
 
     if opt.model == 'pix2pix':
         if isinstance(task_model.netG, torch.nn.DataParallel):
@@ -231,14 +236,16 @@ if __name__ == '__main__':
     for i in range(len(opt.return_layers)):
         name = opt.return_layers[i]
         load_path_weights = os.path.join(ae_checkpoint_dir, f'AE_{name}_{ae_epoch}.pt')
+        if not os.path.exists(load_path_weights):
+            load_path_weights = os.path.join(ae_checkpoint_dir, f'AE_{name}.pt')
 
         state_dict = torch.load(load_path_weights, map_location=str(
-            AENet.device))
+            AENet.device), weights_only=True)
 
         AENet.AENet[i].load_state_dict(state_dict)
         AENet.set_requires_grad(AENet.AENet[i], False)
     
-    adaptors = ANet(opt).cuda()
+    adaptors = ANet(opt).to(task_model.device)
 
     strategy_name = os.environ.get('TTA_STRATEGY', opt.tta_strategy)
     if strategy_name not in TTA_STRATEGIES:

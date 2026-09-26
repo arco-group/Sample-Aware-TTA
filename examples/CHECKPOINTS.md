@@ -1,23 +1,23 @@
-# LDCT Mayo Clinic Example Checkpoints
+# LDCT Mayo Clinic checkpoints
 
-This repository includes the exact checkpoints used by the LDCT Mayo Clinic example.
-
-They are stored locally in `Sample-Aware-TTA/examples/ckp/`:
+Checkpoint binaries are not included. Download or copy them into this canonical layout,
+or pass equivalent external locations through `--task_checkpoint_path` and
+`--ae_checkpoint_dir`:
 
 ```text
-  task_model/
-    100_net_G_A.pth
-  ae/
-    epoch49/
-      AE_input.pt
-      AE_first_conv.pt
-      AE_second_conv.pt
-      AE_third_conv.pt
-      AE_resnet_block_1.pt
-      AE_resnet_block_2.pt
-      AE_resnet_block_3.pt
-      AE_resnet_block_4.pt
-      AE_final_output.pt
+examples/ckp/
+  task_model/100_net_G_A.pth
+  ae/epoch49/
+    AE_input_49.pt
+    AE_first_conv_49.pt
+    AE_second_conv_49.pt
+    AE_third_conv_49.pt
+    AE_resnet_block_1_49.pt
+    AE_resnet_block_2_49.pt
+    AE_resnet_block_3_49.pt
+    AE_resnet_block_4_49.pt
+    AE_final_output_49.pt
 ```
 
-The example command in the repository root README loads these files directly.
+The loader constructs each AE filename as `AE_{name}_{ae_epoch}.pt`; therefore the
+directory above must be passed with `--ae_epoch 49`.

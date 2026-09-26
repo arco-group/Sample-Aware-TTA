@@ -20,7 +20,7 @@ def index_samples_by_subject(data_path, modalities=("source", "target"), min_idx
     if len(modalities) < 2:
         raise ValueError("At least two modality names must be selected.")
 
-    cache_prefix = f"{modalities[0]}_to_{modalities[1]}"
+    cache_prefix = f"{modalities[0]}_to_{modalities[1]}_{min_idx}_{max_idx}"
     samples_cache_path = os.path.join(data_path, f"{cache_prefix}_samples.json")
     subject_dict_cache_path = os.path.join(data_path, f"{cache_prefix}_subject_dict.pkl")
 
@@ -81,6 +81,9 @@ def index_samples_by_subject(data_path, modalities=("source", "target"), min_idx
                     os.path.join(modality_folder, f"slice_{idx}.npy")
                     for idx in informative_slice_indices
                 ]
+                missing = [path for path in slice_paths if not os.path.isfile(path)]
+                if missing:
+                    raise FileNotFoundError(f"Missing paired slice for {subject_id}/{modality}: {missing[0]}")
                 subject_dict[subject_id][modality] = slice_paths
 
     samples = []

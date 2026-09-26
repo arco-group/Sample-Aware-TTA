@@ -140,12 +140,13 @@ class ANet(nn.Module):
             self.conv.apply(init_weights_eye)
             # self.adpNet.apply(init_weights)
             self.adpNet.apply(init_weights_zero)
+            self.optimizer_ANet.state.clear()
         else:
             path = os.path.join(self.save_dir, 'Reset')
             # Load adpNet
             weight_path = os.path.join(path, 'adpNet.pth')
             if os.path.exists(weight_path):
-                state_dict = torch.load(weight_path)
+                state_dict = torch.load(weight_path, weights_only=True)
                 self.adpNet.load_state_dict(state_dict)
             else:
                 print(f"File {weight_path} not found")
@@ -153,12 +154,12 @@ class ANet(nn.Module):
             for i in range(len(self.conv)):
                 weight_path = os.path.join(path, f'conv_{i}.pth')
                 if os.path.exists(weight_path):
-                    state_dict = torch.load(weight_path)
+                    state_dict = torch.load(weight_path, weights_only=True)
                     self.conv[i].load_state_dict(state_dict)
                 else:
                     print(f"File {weight_path} not found")
                     break
-        self.cuda()
+        self.to(next(self.parameters()).device)
 
     def forward(self, batch, task_model, generator='pix2pix'):
         """
@@ -169,9 +170,8 @@ class ANet(nn.Module):
             seq: list->int or np array. Position of 1x1 convolution
         """
         # Send the input image through the adaptor first.
-        real_A = batch['A'].to('cuda')
+        real_A = batch['A'].to(task_model.device)
         x = self.adpNet(real_A)
-        task_model.set_input(batch)
 
         outputs = {}
         outputs['input']= x
@@ -182,93 +182,95 @@ class ANet(nn.Module):
             tm = task_model.netG_A
         elif generator == 'cycle_gan_paired':
             tm = task_model.netG_A
-        x = tm.module.model[0](x)
+        if isinstance(tm, torch.nn.DataParallel):
+            tm = tm.module
+        x = tm.model[0](x)
 
         # Step 2: First convolution
-        first_conv_input = tm.module.model[1](x)
+        first_conv_input = tm.model[1](x)
         if 'first_conv' in self.opt.return_layers:
             first_conv_input=self.conv[0](first_conv_input)
             outputs['first_conv'] = first_conv_input
 
         # Normalization + ReLU
-        x = tm.module.model[2](first_conv_input)
-        x=tm.module.model[3](x)
-        second_conv_input = tm.module.model[4](x)
+        x = tm.model[2](first_conv_input)
+        x=tm.model[3](x)
+        second_conv_input = tm.model[4](x)
         if 'second_conv' in self.opt.return_layers:
             second_conv_input = self.conv[1](second_conv_input)
             outputs['second_conv'] = second_conv_input
-        x = tm.module.model[5:7](second_conv_input)
+        x = tm.model[5:7](second_conv_input)
 
-        third_conv_input = tm.module.model[7](x)
+        third_conv_input = tm.model[7](x)
         if 'third_conv' in self.opt.return_layers:
             third_conv_input = self.conv[2](third_conv_input)
             outputs['third_conv'] = third_conv_input
-        x = tm.module.model[8](third_conv_input)
-        x = tm.module.model[9](x)
+        x = tm.model[8](third_conv_input)
+        x = tm.model[9](x)
 
         # Step 3: ResNet blocks
-        resnet_block_1_feature = tm.module.model[10](x)  # First ResNet block
+        resnet_block_1_feature = tm.model[10](x)  # First ResNet block
         if 'resnet_block_1' in self.opt.return_layers:
             resnet_block_1_feature = self.conv[3](resnet_block_1_feature)
             outputs['resnet_block_1'] = resnet_block_1_feature
 
-        resnet_block_2_feature = tm.module.model[11](resnet_block_1_feature)  # Second ResNet block
+        resnet_block_2_feature = tm.model[11](resnet_block_1_feature)  # Second ResNet block
         if 'resnet_block_2' in self.opt.return_layers:
             resnet_block_2_feature = self.conv[4](resnet_block_2_feature)
             outputs['resnet_block_2'] = resnet_block_2_feature
 
-        resnet_block_3_feature = tm.module.model[12](resnet_block_2_feature)  # Third ResNet block output
+        resnet_block_3_feature = tm.model[12](resnet_block_2_feature)  # Third ResNet block output
         if 'resnet_block_3' in self.opt.return_layers:
             resnet_block_3_feature = self.conv[5](resnet_block_3_feature)
             outputs['resnet_block_3'] = resnet_block_3_feature
 
-        resnet_block_4_feature = tm.module.model[13](resnet_block_3_feature)  # Fourth ResNet block
+        resnet_block_4_feature = tm.model[13](resnet_block_3_feature)  # Fourth ResNet block
         if 'resnet_block_4' in self.opt.return_layers:
             resnet_block_4_feature = self.conv[6](resnet_block_4_feature)
             outputs['resnet_block_4'] = resnet_block_4_feature
 
-        x = tm.module.model[14](resnet_block_4_feature)  # Fifth ResNet block
+        x = tm.model[14](resnet_block_4_feature)  # Fifth ResNet block
         if 'resnet_block_4' in self.opt.return_layers:
             x = self.conv[7](x)
             outputs['resnet_block_4'] = (resnet_block_4_feature, x)
 
-        x = tm.module.model[15](x)  # Sixth ResNet block
+        x = tm.model[15](x)  # Sixth ResNet block
         if 'resnet_block_3' in self.opt.return_layers:
             x = self.conv[8](x)
             outputs['resnet_block_3' ] = (resnet_block_3_feature, x)
 
-        x = tm.module.model[16](x)  # Seventh ResNet block
+        x = tm.model[16](x)  # Seventh ResNet block
         if 'resnet_block_2' in self.opt.return_layers:
             x = self.conv[9](x)
             outputs['resnet_block_2'] = (resnet_block_2_feature, x)
 
-        x = tm.module.model[17](x)  # Eighth ResNet block
+        x = tm.model[17](x)  # Eighth ResNet block
         if 'resnet_block_1' in self.opt.return_layers:
             x = self.conv[10](x)
             outputs['resnet_block_1'] = (resnet_block_1_feature, x)
 
-        x = tm.module.model[18](x)  # Ninth ResNet block
+        x = tm.model[18](x)  # Ninth ResNet block
         if 'third_conv' in self.opt.return_layers:
             x = self.conv[11](x)
             outputs['third_conv'] = (third_conv_input, x)
 
-        x = tm.module.model[19](x)
+        x = tm.model[19](x)
 
-        x = tm.module.model[20](x)
+        x = tm.model[20](x)
         if 'second_conv' in self.opt.return_layers:
             x = self.conv[12](x)
             outputs['second_conv'] = (second_conv_input, x)
 
-        x = tm.module.model[21:24](x)
+        x = tm.model[21:24](x)
 
-        x = tm.module.model[24](x)
+        x = tm.model[24](x)
         if 'first_conv' in self.opt.return_layers:
             x = self.conv[13](x)
             outputs['first_conv'] = (first_conv_input, x)
 
-        x = tm.module.model[25](x)
-        x = tm.module.model[26](x)
-        final_output = tm.module.model[27](x)
+        x = tm.model[25](x)
+        x = tm.model[26](x)
+        final_output = tm.model[27](x)
         outputs['final_output'] = final_output
         return outputs
 
@@ -294,6 +296,7 @@ class ANet(nn.Module):
         Parameters:
             epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
         """
+        device = next(self.parameters()).device
         if not config:
             path = os.path.join(self.save_dir, epoch)
         else:
@@ -303,14 +306,14 @@ class ANet(nn.Module):
         weight_path = os.path.join(path, 'adpNet.pth')
         if len(self.opt.gpu_ids) > 0 and torch.cuda.is_available():
             torch.save(self.adpNet.cpu().state_dict(), weight_path)
-            self.adpNet.cuda()
+            self.adpNet.to(device)
         else:
             torch.save(self.adpNet.cpu().state_dict(), weight_path)
         for i in range(len(self.conv)):
             weight_path = os.path.join(path, f'conv_{i}.pth')
             if len(self.opt.gpu_ids) > 0 and torch.cuda.is_available():
                 torch.save(self.conv[i].cpu().state_dict(), weight_path)
-                self.conv[i].cuda()
+                self.conv[i].to(device)
             else:
                 torch.save(self.conv[i].cpu().state_dict(), weight_path)
 
@@ -321,14 +324,14 @@ class ANet(nn.Module):
             path = os.path.join(self.save_dir_config, epoch)
         weight_path = os.path.join(path, 'adpNet.pth')
         if os.path.exists(weight_path):
-            state_dict = torch.load(weight_path)
+            state_dict = torch.load(weight_path, weights_only=True)
             self.adpNet.load_state_dict(state_dict)
         else:
             print(f"File {weight_path} not found")
         for i in range(len(self.conv)):
             weight_path = os.path.join(path, f'conv_{i}.pth')
             if os.path.exists(weight_path):
-                state_dict = torch.load(weight_path)
+                state_dict = torch.load(weight_path, weights_only=True)
                 self.conv[i].load_state_dict(state_dict)
             else:
                 print(f"File {weight_path} not found")

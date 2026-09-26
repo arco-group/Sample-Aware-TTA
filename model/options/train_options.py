@@ -40,17 +40,6 @@ class TrainOptions(BaseOptions):
         # Test parser parameters
         parser.add_argument('--results_dir', type=str, default='./results/', help='saves results here.')
         parser.add_argument('--aspect_ratio', type=float, default=1.0, help='aspect ratio of result images')
-        parser.add_argument('--tta_rvt_j', type=int, default=60, help='number of processed samples between threshold updates for TTA_rvt')
-        parser.add_argument('--tta_rvt_k', type=int, default=30, help='number of past samples considered when recomputing the adaptive threshold in TTA_rvt')
-        parser.add_argument('--tta_rvt_percentile', type=float, default=95.0, help='percentile used to derive the new threshold during TTA_rvt updates')
-        parser.add_argument('--tta_rvt_sampling', type=str, default='with_replacement', choices=['with_replacement', 'without_replacement'], help='sampling strategy applied to past samples when updating the threshold in TTA_rvt')
-        parser.add_argument('--tta_rvt_loss_source', type=str, default='post', choices=['pre', 'post'], help='which loss to use for threshold updates when TTA is performed (pre or post adaptation)')
-        parser.add_argument('--tta_ema_j', type=int, default=60, help='number of processed samples between threshold updates for TTA_ema')
-        parser.add_argument('--tta_ema_k', type=int, default=30, help='number of past samples considered when recomputing the adaptive threshold in TTA_ema')
-        parser.add_argument('--tta_ema_t', type=int, default=None, help='number of processed samples before first threshold update for TTA_ema')
-        parser.add_argument('--tta_ema_percentile', type=float, default=95.0, help='percentile used to derive the percentile target during TTA_ema updates')
-        parser.add_argument('--tta_ema_alpha', type=float, default=0.2, help='EMA smoothing factor applied when updating the threshold in TTA_ema')
-        parser.add_argument('--tta_ema_loss_source', type=str, default='post', choices=['pre', 'post'], help='which loss to use for threshold updates when TTA_ema is performed (pre or post adaptation)')
 
         self.isTrain = True
         return parser

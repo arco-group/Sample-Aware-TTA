@@ -1,0 +1,10 @@
+# Tested with Python 3.9.25.
+torch
+torchvision
+numpy
+pandas
+Pillow
+scikit-image
+tqdm
+optuna
+dominate

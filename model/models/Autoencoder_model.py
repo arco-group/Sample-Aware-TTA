@@ -20,7 +20,8 @@ class AENet(nn.Module):
         super(AENet, self).__init__()
         self.opt = opt
         self.gpu_ids = opt.gpu_ids
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        use_cuda = bool(opt.gpu_ids) and torch.cuda.is_available()
+        self.device = torch.device("cuda" if use_cuda else "cpu")
         self.def_AENet()
         self.AELoss = nn.MSELoss()
         self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
@@ -60,11 +61,9 @@ class AENet(nn.Module):
     # This class only performs the forward pass here; training and loss computation happen elsewhere.
 
     def forward(self, side_out):
+        """Reconstruct one attached task-model feature map."""
         side_out = side_out.to(self.device)
-        self.reconstructed_A = self.netAE_A(self.real_A)
-        self.reconstructed_B = self.netAE_B(self.real_B)
-
-        return self.reconstructed_A, self.reconstructed_B
+        return self.AENet[-1](side_out, side_out=False)
 
     def set_requires_grad(self, nets, requires_grad=False):
         """Set requies_grad=False for all the networks to avoid unnecessary computations
@@ -128,7 +127,6 @@ class AENet(nn.Module):
             else:
                 torch.save(self.AENet[AE_to_train].cpu().state_dict(), weight_path)
 
-    # TODO:
     def update_learning_rate(self):
         """Update learning rates for all the networks; called at the end of every epoch"""
         old_aelr = self.optimizers[0].param_groups[0]['lr']
