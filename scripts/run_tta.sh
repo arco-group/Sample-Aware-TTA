@@ -21,7 +21,7 @@ NORM="${NORM:-instance}"
 GPU_IDS="${GPU_IDS:-0}"
 AE_EPOCH="${AE_EPOCH:-49}"
 
-read -r -a STRATEGIES <<< "${TTA_STRATEGIES:-rndm_10 rndm_50 grid forward backward}"
+read -r -a STRATEGIES <<< "${TTA_STRATEGIES:-rndm_10 rndm_50 grid forward backward bayesian}"
 read -r -a THRESHOLDS <<< "${TTA_THRESHOLDS:-0.0064}"
 read -r -a MODALITIES <<< "$MODALITIES_STRING"
 cd "$MODEL_DIR"

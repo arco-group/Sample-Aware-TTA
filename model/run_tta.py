@@ -6,7 +6,7 @@ from models import create_model
 import pandas as pd
 import os
 import random
-from util.visualizer import calcola_mse, calculate_psnr, calculate_ssim
+from util.visualizer import calculate_mae, calculate_psnr, calculate_ssim
 from collections import OrderedDict
 import numpy as np
 from models.adaptor_3 import ANet
@@ -102,7 +102,7 @@ def run_inference(task_model, AENet, adaptors, dataset, opt, save_dir, thr=0, tt
         task_model.compute_visuals()
         visuals = task_model.get_current_visuals()
 
-        mae_score = calcola_mse(visuals)
+        mae_score = calculate_mae(visuals)
         psnr_score = calculate_psnr(visuals)
         ssim_score = calculate_ssim(visuals)
         

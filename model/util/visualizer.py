@@ -21,7 +21,7 @@ if sys.version_info[0] == 2:
 else:
     VisdomExceptionBase = ConnectionError
 
-def calcola_mse(visuals):
+def calculate_mae(visuals):
     for label, image in visuals.items():
         image_fake_B = visuals["fake_B"]
         image_real_B = visuals["real_B"]
@@ -64,6 +64,7 @@ def calculate_ssim(visuals):
         image_real_B_np = image_real_B.cpu().detach().numpy()
         ssim_values = []
         for i in range(image_fake_B_np.shape[0]):
+            # Images are normalized to [-1, 1], so their data range is 2.
             ssim_index, _ = ssim(image_fake_B_np[i, 0], image_real_B_np[i, 0], full=True, data_range=2)
             ssim_values.append(ssim_index)
         ssim_array = np.array(ssim_values)

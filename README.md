@@ -23,6 +23,7 @@
 This repository releases the code for sample-aware Test-Time Adaptation in medical image-to-image translation.
 The core code is generic and can be reused with different task models and datasets.
 An LDCT Mayo Clinic example is provided to show one concrete setup.
+Targets are evaluation-only; adaptation and configuration selection use reference-free losses.
 
 <p align="center">
   <img src="./method_v7.jpg" alt="Sample-aware TTA method overview" width="100%" />
@@ -54,7 +55,7 @@ examples/
 ```
 
 - `TTA.py` is the repo-root convenience entrypoint.
-- `model/` contains the generic sample-aware TTA pipeline and reconstruction-model components.
+- `model/` contains the generic sample-aware TTA pipeline and the reconstruction-autoencoder definitions.
 - `scripts/` contains a generic launcher that expects paths through environment variables or explicit flags.
 - `examples/` documents the LDCT Mayo setup.
 - Checkpoint binaries are not distributed; the canonical example layout is documented in
@@ -65,7 +66,6 @@ examples/
 
 ## Core Usage
 
-Targets are evaluation-only; adaptation and selection use reference-free losses.
 Pass dataset and checkpoint paths explicitly.
 
 *Customize the values below before running the command.*
@@ -108,6 +108,8 @@ python TTA.py \
   --tta_strategy "$strategy" \
   --tta_threshold "$thr"
 ```
+
+Calibrate `thr` on your own training data as the 95th percentile of the reconstruction-error distribution.
 
 For custom datasets, replace `--dataset_mode`, `--modalities`, and the checkpoint paths with your own values.
 
@@ -163,15 +165,14 @@ python TTA.py \
   --tta_threshold "$thr"
 ```
 
-Final metrics use the paired target only after selection. See [examples/README.md](examples/README.md).
+See [examples/README.md](examples/README.md).
 
 ---
 
 ## Dependencies
 
 The release is tested with Python 3.9.25. Install its runtime dependencies with
-`pip install -r requirements.txt`. Optuna is used only by the explicit `bayesian` strategy,
-but is included so every released strategy is available after one installation.
+`pip install -r requirements.txt`. Optuna is required by the `bayesian` strategy.
 
 Set `GPU_IDS=-1` in the launcher for CPU mode; the default is GPU `0`.
 

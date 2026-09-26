@@ -1,11 +1,13 @@
+"""Run inference-time adaptation and configuration selection.
+
+Selection uses only AE feature-reconstruction errors; SSIM, MAE, and PSNR use
+the paired target only after the configuration has been selected.
+"""
+
 import torch
 
-# Inference-time adaptation and configuration selection use only AE feature
-# reconstruction errors, which do not require target references. SSIM, MAE,
-# and PSNR compare against the paired target and are computed only once, after
-# the configuration has been selected, for reference-based final evaluation.
 import pandas as pd
-from util.visualizer import calcola_mse, calculate_psnr, calculate_ssim
+from util.visualizer import calculate_mae, calculate_psnr, calculate_ssim
 from collections import OrderedDict
 import numpy as np
 from itertools import combinations
@@ -40,16 +42,16 @@ def l2_reg_ortho(model, lambda_l2=1e-4):
 def TTA_rndm_50(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
-    tutte_combinazioni = set()
+    all_combinations = set()
     num_random_comb = opt.__dict__.get('num_random_comb', 50)
-    while len(tutte_combinazioni) < num_random_comb:
+    while len(all_combinations) < num_random_comb:
         r = random.randint(1, len(indexs))
-        tutte_combinazioni.add(tuple(sorted(random.sample(indexs, r))))
-    tutte_combinazioni = list(tutte_combinazioni)
+        all_combinations.add(tuple(sorted(random.sample(indexs, r))))
+    all_combinations = list(all_combinations)
 
     orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
-    for comb in tutte_combinazioni:
+    for comb in all_combinations:
         row, candidate_loss = _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, comb, orthw)
         loss_config_output = _tta_append_loss_row(loss_config_output, row)
 
@@ -176,7 +178,7 @@ def _tta_finalize_result(adaptors, opt, task_model, batch, return_layers, loss_c
     visuals_output['fake_B'] = fake_B
 
     ssim_score = calculate_ssim(visuals_output)
-    mae_score = calcola_mse(visuals_output)
+    mae_score = calculate_mae(visuals_output)
     psnr_score = calculate_psnr(visuals_output)
 
     selected_loss_output = float(loss_config_output[loss_config_output['config'] == used_comb]['loss_output'].values[0])
@@ -208,16 +210,16 @@ def _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model):
 def TTA_rndm_10(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
-    tutte_combinazioni = set()
+    all_combinations = set()
     num_random_comb = opt.__dict__.get('num_random_comb', 10)
-    while len(tutte_combinazioni) < num_random_comb:
+    while len(all_combinations) < num_random_comb:
         r = random.randint(1, len(indexs))
-        tutte_combinazioni.add(tuple(sorted(random.sample(indexs, r))))
-    tutte_combinazioni = list(tutte_combinazioni)
+        all_combinations.add(tuple(sorted(random.sample(indexs, r))))
+    all_combinations = list(all_combinations)
 
     orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
-    for comb in tutte_combinazioni:
+    for comb in all_combinations:
         row, candidate_loss = _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, comb, orthw)
         loss_config_output = _tta_append_loss_row(loss_config_output, row)
 
@@ -227,13 +229,13 @@ def TTA_rndm_10(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=Fal
 def TTA_grid(adaptors, opt, task_model, save_dir, batch, rec_loss, stable=False, return_layers=None, plot=False, ae_model=None):
     n = len(return_layers[1:-1])
     indexs = [i for i in range(n)]
-    tutte_combinazioni = []
+    all_combinations = []
     for r in range(1, len(indexs) + 1):
-        tutte_combinazioni.extend(combinations(indexs, r))
+        all_combinations.extend(combinations(indexs, r))
 
     orthw, rec_loss, loss_config_output = _tta_prepare_strategy(adaptors, opt, rec_loss, ae_model)
 
-    for comb in tutte_combinazioni:
+    for comb in all_combinations:
         row, candidate_loss = _tta_evaluate_combination(adaptors, opt, task_model, batch, return_layers, comb, orthw)
         loss_config_output = _tta_append_loss_row(loss_config_output, row)
 
